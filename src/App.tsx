@@ -99,8 +99,8 @@ const sampleLinks = [
     source: 'YouTube' as const,
   },
   {
-    title: 'Big Buck Bunny 4K Sample Video Stream',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    title: 'Big Buck Bunny Open Sample Video Stream',
+    url: 'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4',
     source: 'Direct Media' as const,
   },
 ];
