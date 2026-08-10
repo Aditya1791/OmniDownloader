@@ -1,0 +1,6 @@
+{
+  "name": "OmniDownload",
+  "description": "Universal high-bitrate media downloader and stream extractor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
