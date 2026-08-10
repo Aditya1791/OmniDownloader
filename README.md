@@ -164,19 +164,19 @@ OmniDownload/
 If you find this project helpful, feel free to give it a ⭐ on GitHub and connect!
 
 <p align="left">
-  <a href="https://github.com/YOUR_GITHUB_USERNAME" target="_blank">
+  <a href="https://github.com/Aditya1791" target="_blank">
     <img src="https://img.shields.io/badge/GitHub-Follow%20Me-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub Follow" />
   </a>
   &nbsp;
-  <a href="https://linkedin.com/in/YOUR_LINKEDIN_USERNAME" target="_blank">
+  <a href="https://www.linkedin.com/in/aditya-ranjan-swain" target="_blank">
     <img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn Connect" />
   </a>
   &nbsp;
-  <a href="https://twitter.com/YOUR_TWITTER_USERNAME" target="_blank">
+  <a href="https://x.com/Monkey_D_Adi" target="_blank">
     <img src="https://img.shields.io/badge/Twitter%20%2F%20X-Follow-000000?style=for-the-badge&logo=x&logoColor=white" alt="Twitter Follow" />
   </a>
   &nbsp;
-  <a href="mailto:your.email@gmail.com">
+  <a href="mailto:swainaditya85@gmail.com">
     <img src="https://img.shields.io/badge/Gmail-Contact%20Me-EA4335?style=for-the-badge&logo=gmail&logoColor=white" alt="Gmail Contact" />
   </a>
 </p>
