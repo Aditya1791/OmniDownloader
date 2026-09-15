@@ -1,19 +1,12 @@
 import { Innertube, Platform } from 'youtubei.js';
 
+// Setup JavaScript eval environment for YouTube.js deciphering
 Platform.shim.eval = async (data, env) => {
   const code = data.output || data;
   return new Function(...Object.keys(env || {}), code)(...Object.values(env || {}));
 };
 
-let ytWebInstance = null;
 let ytAndroidInstance = null;
-
-async function getWebClient() {
-  if (!ytWebInstance) {
-    ytWebInstance = await Innertube.create();
-  }
-  return ytWebInstance;
-}
 
 async function getAndroidClient() {
   if (!ytAndroidInstance) {
@@ -24,18 +17,20 @@ async function getAndroidClient() {
 
 export function extractYouTubeId(url) {
   if (!url) return null;
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/);
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/|music\.youtube\.com\/watch\?v=))([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
-// Cobalt Instances for high-speed multi-platform extraction
+// Configurable Cobalt Instances (e.g. self-hosted or user-provided)
 const COBALT_INSTANCES = [
   process.env.COBALT_API_URL,
-  'https://api.cobalt.tools',
-  'https://cobalt-api.koyeb.app',
 ].filter(Boolean);
 
 export async function requestCobalt(url, format = 'MP4', quality = '1080') {
+  if (COBALT_INSTANCES.length === 0) {
+    throw new Error('No Cobalt instances configured');
+  }
+
   const isAudio = format === 'MP3' || format === 'M4A' || format === 'FLAC';
   
   let vQuality = '1080';
@@ -92,7 +87,7 @@ export async function getMediaInfo(url) {
   const ytId = extractYouTubeId(url);
   if (ytId) {
     try {
-      const yt = await getWebClient();
+      const yt = await getAndroidClient();
       const info = await yt.getBasicInfo(ytId);
       const title = info.basic_info.title || 'YouTube Video';
       const author = info.basic_info.author || 'YouTube Creator';
@@ -102,6 +97,11 @@ export async function getMediaInfo(url) {
       const duration = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       const thumbnail = info.basic_info.thumbnail?.[0]?.url || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
       
+      // Calculate realistic size estimate
+      const estimatedSizeMb = durationSec > 0 
+        ? Math.max(5.0, parseFloat(((durationSec * 2.5) / 8).toFixed(1))) 
+        : 25.0;
+
       return {
         success: true,
         source: 'YouTube',
@@ -111,11 +111,11 @@ export async function getMediaInfo(url) {
         duration,
         durationSec,
         thumbnail,
-        formats: ['MP4', 'MP3', 'WebM', 'M4A'],
-        estimatedSizeMb: Math.max(8.0, parseFloat(((durationSec * 2.8) / 8).toFixed(1))),
+        formats: ['MP4', 'MP3', 'WebM', 'M4A', 'FLAC'],
+        estimatedSizeMb,
       };
     } catch (ytErr) {
-      console.warn('Innertube getBasicInfo failed, falling back to general extractor:', ytErr.message);
+      console.warn('Innertube getBasicInfo failed for YouTube ID:', ytId, ytErr.message);
     }
   }
 
@@ -141,11 +141,11 @@ export async function getMediaInfo(url) {
   else if (hostname.includes('pinterest')) source = 'Pinterest';
   else if (hostname.includes('facebook') || hostname.includes('fb.watch')) source = 'Facebook';
 
-  // Try extracting metadata through Cobalt if it's a known social platform
-  if (source !== 'Direct Media Stream') {
+  // If Cobalt is configured, try it
+  if (COBALT_INSTANCES.length > 0) {
     try {
       const cobaltData = await requestCobalt(url);
-      const extractedTitle = cobaltData.filename ? cobaltData.filename.replace(/\.[^/.]+$/, '') : `${source} Video`;
+      const extractedTitle = cobaltData.filename ? cobaltData.filename.replace(/\.[^/.]+$/, '') : `${source} Media`;
       return {
         success: true,
         source,
@@ -157,7 +157,6 @@ export async function getMediaInfo(url) {
         thumbnail: '',
         formats: ['MP4', 'MP3'],
         estimatedSizeMb: 18.5,
-        cobaltUrl: cobaltData.url,
       };
     } catch (cErr) {
       console.warn('Cobalt metadata check note:', cErr.message);
@@ -173,7 +172,7 @@ export async function getMediaInfo(url) {
     duration: '03:45',
     durationSec: 225,
     thumbnail: '',
-    formats: ['MP4', 'MP3', 'WebM'],
+    formats: ['MP4', 'MP3', 'WebM', 'M4A'],
     estimatedSizeMb: 35.0,
   };
 }
@@ -181,45 +180,102 @@ export async function getMediaInfo(url) {
 export async function downloadMediaStream(url, format = 'MP4', quality = 'best') {
   const ytId = extractYouTubeId(url);
   
-  // For YouTube, attempt fast direct InnerTube stream first
+  // 1. YouTube Direct High-Speed Extraction Engine
   if (ytId) {
     try {
       const yt = await getAndroidClient();
+      const info = await yt.getBasicInfo(ytId);
+
+      // Look for progressive format with direct working GoogleVideo URL
+      const progressiveFormats = info.streaming_data?.formats || [];
+      const bestProgFormat = progressiveFormats.find(f => f.has_video && f.has_audio && f.url) || progressiveFormats[0];
+
+      if (bestProgFormat && bestProgFormat.url) {
+        const response = await fetch(bestProgFormat.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          },
+        });
+
+        if (response.ok && response.body) {
+          const contentLength = response.headers.get('content-length');
+          return {
+            stream: response.body,
+            contentLength: contentLength ? parseInt(contentLength, 10) : null,
+            contentType: bestProgFormat.mime_type?.split(';')[0] || 'video/mp4',
+          };
+        }
+      }
+
+      // Innertube direct download fallback
       const stream = await yt.download(ytId, {
-        type: (format === 'MP3' || format === 'M4A') ? 'audio' : 'video+audio',
+        type: 'video+audio',
         quality: 'best',
       });
-      return stream;
-    } catch (ytStreamErr) {
-      console.warn('Innertube direct stream failed, delegating to Cobalt:', ytStreamErr.message);
-    }
-  }
 
-  // Multi-platform download via Cobalt engine
-  try {
-    const cobaltData = await requestCobalt(url, format, quality);
-    const downloadUrl = cobaltData.url || (cobaltData.picker && cobaltData.picker[0]?.url);
-    if (downloadUrl) {
-      const response = await fetch(downloadUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-        },
-      });
-      if (response.ok) {
-        return response.body;
+      if (stream) {
+        return {
+          stream,
+          contentLength: null,
+          contentType: 'video/mp4',
+        };
       }
+    } catch (ytErr) {
+      console.warn('Innertube direct extraction error for YouTube:', ytErr.message);
+      throw new Error(`YouTube extraction failed: ${ytErr.message}`);
     }
-  } catch (cobaltErr) {
-    console.warn('Cobalt stream retrieval failed:', cobaltErr.message);
   }
 
-  // Direct URL stream fallback proxy
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    },
-  });
-  if (!response.ok) throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
-  return response.body;
-}
+  // 2. Cobalt multi-platform extraction (if configured)
+  if (COBALT_INSTANCES.length > 0) {
+    try {
+      const cobaltData = await requestCobalt(url, format, quality);
+      const downloadUrl = cobaltData.url || (cobaltData.picker && cobaltData.picker[0]?.url);
+      if (downloadUrl) {
+        const response = await fetch(downloadUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          },
+        });
+        if (response.ok && response.body) {
+          const contentLength = response.headers.get('content-length');
+          return {
+            stream: response.body,
+            contentLength: contentLength ? parseInt(contentLength, 10) : null,
+            contentType: response.headers.get('content-type') || 'video/mp4',
+          };
+        }
+      }
+    } catch (cobaltErr) {
+      console.warn('Cobalt stream retrieval failed:', cobaltErr.message);
+    }
+  }
 
+  // 3. Direct Media Stream fetch (for direct audio/video files)
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    // Prevent streaming HTML webpages as fake video/audio files
+    if (contentType.includes('text/html')) {
+      throw new Error('The target URL returned a webpage instead of a media stream. Please use a direct media link or supported YouTube URL.');
+    }
+
+    const contentLength = response.headers.get('content-length');
+    return {
+      stream: response.body,
+      contentLength: contentLength ? parseInt(contentLength, 10) : null,
+      contentType,
+    };
+  } catch (err) {
+    throw new Error(`Failed to stream media from source: ${err.message}`);
+  }
+}

@@ -235,11 +235,14 @@ export default function App() {
     }
   };
 
+  const [downloadErrorMessage, setDownloadErrorMessage] = useState<string | null>(null);
+
   // Real Streaming Media Download Execution
   const handleStartDownload = async () => {
     const item = activeItem;
     if (!item.url) return;
 
+    setDownloadErrorMessage(null);
     setActiveItem((prev) => ({ ...prev, status: 'DOWNLOADING', progress: 0, speedMb: 0 }));
     abortControllerRef.current = new AbortController();
 
@@ -253,7 +256,14 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned status: ${response.status}`);
+        let errMsg = `Server returned status: ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson.error) errMsg = errJson.error;
+        } catch {
+          // ignore json parse error
+        }
+        throw new Error(errMsg);
       }
 
       const contentLengthHeader = response.headers.get('Content-Length');
@@ -285,8 +295,12 @@ export default function App() {
         }));
       }
 
+      if (chunks.length === 0 || loadedBytes === 0) {
+        throw new Error('Received 0 bytes of media content from server.');
+      }
+
       // Combine chunks into real video/audio Blob
-      const mimeType = item.format === 'MP3' ? 'audio/mpeg' : item.format === 'M4A' ? 'audio/mp4' : item.format === 'WebM' ? 'video/webm' : 'video/mp4';
+      const mimeType = item.format === 'MP3' ? 'audio/mpeg' : item.format === 'M4A' ? 'audio/mp4' : item.format === 'FLAC' ? 'audio/flac' : item.format === 'WebM' ? 'video/webm' : 'video/mp4';
       const blob = new Blob(chunks, { type: mimeType });
       const blobUrl = URL.createObjectURL(blob);
 
@@ -317,10 +331,8 @@ export default function App() {
         setActiveItem((prev) => ({ ...prev, status: 'CANCELLED', progress: 0 }));
       } else {
         console.error('Download execution failed:', err);
-        // Direct fallback stream via anchor tag
-        const directUrl = `/api/download?url=${encodeURIComponent(item.url)}&format=${item.format}&title=${encodeURIComponent(item.title)}`;
-        window.open(directUrl, '_blank');
-        setActiveItem((prev) => ({ ...prev, status: 'COMPLETED', progress: 100 }));
+        setDownloadErrorMessage(err.message || 'Download failed. Please retry.');
+        setActiveItem((prev) => ({ ...prev, status: 'ERROR', progress: 0 }));
       }
     }
   };
@@ -333,11 +345,12 @@ export default function App() {
   };
 
   const handleResetJob = () => {
+    setDownloadErrorMessage(null);
     setActiveItem((prev) => ({ ...prev, status: 'READY', progress: 0, speedMb: 0, etaSeconds: 0 }));
   };
 
   const handleDirectDownload = (item: DownloadItem) => {
-    const directUrl = `/api/download?url=${encodeURIComponent(item.url)}&format=${item.format}&title=${encodeURIComponent(item.title)}`;
+    const directUrl = `/api/download?url=${encodeURIComponent(item.url)}&format=${item.format}&quality=${encodeURIComponent(item.quality)}&title=${encodeURIComponent(item.title)}`;
     const anchor = document.createElement('a');
     anchor.href = directUrl;
     anchor.download = `${item.title}${formatConfigs[item.format].ext}`;
@@ -603,6 +616,7 @@ export default function App() {
                     activeItem.status === 'DOWNLOADING' ? 'bg-emerald-500 text-black animate-pulse' :
                     activeItem.status === 'COMPLETED' ? 'bg-blue-600 text-white' :
                     activeItem.status === 'PAUSED' ? 'bg-amber-500 text-black' :
+                    activeItem.status === 'ERROR' ? 'bg-red-600 text-white' :
                     isDarkMode ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-200 text-neutral-800'
                   }`}>
                     [{activeItem.status}]
@@ -893,16 +907,23 @@ export default function App() {
                     </div>
                   )}
 
-                  {activeItem.status === 'CANCELLED' && (
-                    <button
-                      onClick={handleResetJob}
-                      className={`w-full py-3 border-[1.5px] ${borderStyle} ${
-                        isDarkMode ? 'bg-neutral-900 hover:bg-neutral-800 text-white' : 'bg-white hover:bg-neutral-100 text-black'
-                      } font-mono-custom font-bold text-xs uppercase tracking-widest cursor-pointer flex items-center justify-center gap-2`}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>RETRY DOWNLOAD</span>
-                    </button>
+                  {(activeItem.status === 'CANCELLED' || activeItem.status === 'ERROR') && (
+                    <div className="flex flex-col gap-2 w-full">
+                      {downloadErrorMessage && (
+                        <div className="p-3 border-[1.5px] border-red-500 bg-red-500/10 text-red-500 font-mono-custom text-xs">
+                          <span className="font-bold">DOWNLOAD ERROR:</span> {downloadErrorMessage}
+                        </div>
+                      )}
+                      <button
+                        onClick={handleResetJob}
+                        className={`w-full py-3 border-[1.5px] ${borderStyle} ${
+                          isDarkMode ? 'bg-neutral-900 hover:bg-neutral-800 text-white' : 'bg-white hover:bg-neutral-100 text-black'
+                        } font-mono-custom font-bold text-xs uppercase tracking-widest cursor-pointer flex items-center justify-center gap-2`}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>RESET & RETRY</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
